@@ -15,7 +15,7 @@ import tf_transformations
 from geometry_msgs.msg import Point, PoseStamped
 from nav_msgs.msg import Odometry
 from ackermann_msgs.msg import AckermannDriveStamped
-from std_msgs.msg import Float32MultiArray, MultiArrayDimension
+from visualization_msgs.msg import Marker, MarkerArray
 
 from shield_mppi.trajectory_sampler import MPPICBFStochasticTrajectoriesSampler
 from shield_mppi.dynamics import VehicleDynamics
@@ -23,21 +23,6 @@ from shield_mppi.frenet_conversion_jax import FrenetConverter
 from shield_mppi.utils import nearest_point
 from shield_mppi.cost_evaluator import MPPICBFCostEvaluator
 from shield_mppi.collision_checker import CollisionChecker
-
-def _numpy_to_multiarray(multiarray_type, np_array):
-    multiarray = multiarray_type()
-    multiarray.layout.dim = [MultiArrayDimension(label='dim%d' % i,
-                                                 size=np_array.shape[i],
-                                                 stride=np_array.shape[i] * np_array.dtype.itemsize) for i in range(np_array.ndim)];
-    multiarray.data = np_array.reshape([1, -1])[0].tolist()
-    return multiarray
-
-def _multiarray_to_numpy(pytype, dtype, multiarray):
-    dims = tuple(map(lambda x: x.size, multiarray.layout.dim))
-    return np.array(multiarray.data, dtype=pytype).reshape(dims).astype(dtype)
-
-to_multiarray_f32 = partial(_numpy_to_multiarray, Float32MultiArray)
-to_numpy_f32 = partial(_multiarray_to_numpy, float, np.float32)
 
 
 class ShieldMPPI(Node):
@@ -115,15 +100,15 @@ class ShieldMPPI(Node):
 
         self.dynamics = VehicleDynamics(state_dim=(7, num_traj), delta_t=self.dt, frenet_converter=self.frenet_converter)
         collision_checker = CollisionChecker(
-            track_width=0.5,
+            track_width=0.75,
         )
         self.cost_evaluator = MPPICBFCostEvaluator(
             cbf_alpha=0.9,
             collision_checker=collision_checker,
             Q = np.diag([5.0, 5.0, 0.0, 3.0, 1.0, 0.0, 10.0]),
-            QN = np.diag([10.0, 10.0, 0.0, 5.0, 1.0, 0.0, 1000.0]),
-            R = np.diag([10.0, 5.0]),
-            collision_cost=1000.0,
+            QN = np.diag([100.0, 100.0, 0.0, 50.0, 100.0, 0.0, 100.0]),
+            R = np.diag([1.0, 1.0]),
+            collision_cost=10.0,
             goal_cost=None
         )
 
@@ -145,10 +130,59 @@ class ShieldMPPI(Node):
                 '/pf/pose/odom',
                 self.pose_callback,
                 qos)
+            
+        # Publishers for visualization
+        self.reference_pub = self.create_publisher(MarkerArray, '/reference', qos)
+        self.trajectory_pub = self.create_publisher(MarkerArray, '/trajectory', qos)
 
         self.control = np.array([0.0, 0.0])  # steering angle, speed
         # Publisher
         self.drive_pub = self.create_publisher(AckermannDriveStamped, '/drive', qos)
+
+    def publish_reference(self, ref_traj):
+        marker_array = MarkerArray()
+        for i in range(ref_traj.shape[1]):
+            marker = Marker()
+            marker.header.frame_id = "map"
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = "reference"
+            marker.id = i
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+            marker.pose.position.x = ref_traj[0, i]
+            marker.pose.position.y = ref_traj[1, i]
+            marker.pose.position.z = 0.0
+            marker.scale.x = 0.1
+            marker.scale.y = 0.1
+            marker.scale.z = 0.1
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+            marker_array.markers.append(marker)
+        self.reference_pub.publish(marker_array)
+
+    def publish_sampled_trajectories(self, trajectories):
+        marker_array = MarkerArray()
+        for i in range(trajectories.shape[0]):
+            for j in range(trajectories.shape[2]):
+                marker = Marker()
+                marker.header.frame_id = "map"
+                marker.header.stamp = self.get_clock().now().to_msg()
+                marker.ns = "sampled_trajectory"
+                marker.id = i * trajectories.shape[2] + j
+                marker.type = Marker.LINE_STRIP
+                marker.action = Marker.ADD
+                marker.pose.position.x = float(trajectories[i, 0, j])
+                marker.pose.position.y = float(trajectories[i, 1, j])
+                marker.pose.position.z = 0.0
+                marker.scale.x = 0.05
+                marker.color.r = 0.0
+                marker.color.g = 1.0
+                marker.color.b = 0.0
+                marker.color.a = 1.0
+                marker_array.markers.append(marker)
+        self.trajectory_pub.publish(marker_array)
 
 
     def pose_callback(self, msg):
@@ -221,7 +255,7 @@ class ShieldMPPI(Node):
         ref_traj[4, 0] = cyaw[ind]
 
         # based on current velocity, distance traveled on the ref line between time steps
-        travel = abs(state[3]) * self.dt
+        travel = abs(sp[ind]) * self.dt
         dind = travel / self.dlk
         ind_list = int(ind) + np.insert(
             np.cumsum(np.repeat(dind, self.control_horizon-1)), 0, 0
@@ -233,7 +267,6 @@ class ShieldMPPI(Node):
         cyaw[cyaw - state[4] > 3.15] = cyaw[cyaw - state[4] > 3.15] - (2 * np.pi)
         cyaw[cyaw - state[4] < -3.15] = cyaw[cyaw - state[4] < -3.15] + (2 * np.pi)
         ref_traj[4, :] = cyaw[ind_list]
-        print("Ref Traj: ", ref_traj)
         return ref_traj
 
 
@@ -247,6 +280,8 @@ class ShieldMPPI(Node):
             self.waypoints_psi,
             self.waypoints_speed
         )
+        # Publish reference trajectory
+        self.publish_reference(ref_traj)
 
         # min_controls = [-1.0, -0.1]
         # max_controls = [1.0, 0.4]
@@ -268,6 +303,9 @@ class ShieldMPPI(Node):
                 control_bounds=jnp.array(self.control_bounds)
             )
 
+            # Publish sampled trajectories
+            # self.publish_sampled_trajectories(trajectories)
+
             beta = np.min(costs)
             eta = np.sum(np.exp(-1 / self.inverse_temperature * (costs - beta)))
             omega = 1 / eta * np.exp(-1 / self.inverse_temperature * (costs - beta))
@@ -278,16 +316,11 @@ class ShieldMPPI(Node):
         start = time.perf_counter()
         if self.repair_horizon:  # if we use CBF to carry out local repair
             v_safe = self.local_repair(v, state_cur)
-            print("Local repair frequency: ", 1 / (time.perf_counter() - start))
         else:  # if original MPPI
             v_safe = v
-            print("No local repair step!")
         u = v_safe[:, 0]
         # Control Bounds
         u = np.clip(u, self.min_controls, self.max_controls)
-        print("Control: ", u)
-
-        print("Control update frequency: ", 1 / (time.perf_counter() - start_control))
 
         # if self.renderer is not None:
             # optimal_trajectory = self.rollout_out(state_cur, v)
