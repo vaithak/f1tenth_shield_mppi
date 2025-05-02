@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import time
 import jax
 import jax.numpy as jnp
 from jax.scipy.optimize import minimize
@@ -23,19 +22,30 @@ from shield_mppi.frenet_conversion_jax import FrenetConverter
 from shield_mppi.utils import nearest_point
 from shield_mppi.cost_evaluator import MPPICBFCostEvaluator
 from shield_mppi.collision_checker import CollisionChecker
+from f1tenth_icra_race_msgs.msg import ObstacleArray
 
+
+class oneLineJaxRNG:
+    def __init__(self, init_num=0) -> None:
+        self.rng = jax.random.PRNGKey(init_num)
+    
+    def new_key(self):
+        self.rng, key = jax.random.split(self.rng)
+        return key
 
 class ShieldMPPI(Node):
     def __init__(
         self,
         control_horizon=12,
-        num_traj=60,
+        num_traj=50,
         control_dim=2,
         inverse_temperature=1,
         initial_control_sequence=np.zeros((2, 1)),
         repair_horizon=4,
         repair_steps=4,
-        control_bounds=np.array([[-0.4, -1.0], [0.4, 1.0]]),
+        control_bounds=np.array([[-0.4, -5.0], [0.4, 5.0]]),
+        mean=np.array([0.0, 0.0]),
+        cov=np.array([[0.5, 0.0], [0.0, 3.0]]),
     ):
         super().__init__('shield_mppi_node')
         print("Shield MPPI Node Initialized")
@@ -43,19 +53,19 @@ class ShieldMPPI(Node):
         import os
         cwd = os.getcwd()
 
+        self.jrng = oneLineJaxRNG(42)
+
         self.declare_parameters(
             namespace='',
             parameters=[
                 ('is_sim', True),
                 ('plot_debug', False),
                 ('print_debug', False),
-                ('num_samples', 100),
-                ('num_steps', 10),
                 ('dt', 0.1),
                 ('max_steering_angle', 0.5),
-                ('max_speed', 4.0),
+                ('max_speed', 2.6),
                 ('goal_tolerance', 0.1),
-                ('waypoint_file', f'{cwd}/src/shield_mppi/waypoints/fitted_2.csv'),
+                ('waypoint_file', f'{cwd}/src/f1tenth_shield_mppi/waypoints/fitted_2.csv'),
             ]
         )
 
@@ -63,14 +73,15 @@ class ShieldMPPI(Node):
         self.is_sim = self.get_parameter('is_sim').get_parameter_value().bool_value
         self.plot_debug = self.get_parameter('plot_debug').get_parameter_value().bool_value
         self.print_debug = self.get_parameter('print_debug').get_parameter_value().bool_value
-        self.num_samples = self.get_parameter('num_samples').get_parameter_value().integer_value
-        self.num_steps = self.get_parameter('num_steps').get_parameter_value().integer_value
         self.dt = self.get_parameter('dt').get_parameter_value().double_value
         self.max_steering_angle = self.get_parameter('max_steering_angle').get_parameter_value().double_value
         self.max_speed = self.get_parameter('max_speed').get_parameter_value().double_value
         self.goal_tolerance = self.get_parameter('goal_tolerance').get_parameter_value().double_value
         self.waypoint_file = self.get_parameter('waypoint_file').get_parameter_value().string_value
         self.dlk = 0.27 # dist step [m] kinematic
+        self.mean = mean
+        self.cov = cov
+        self.num_traj = num_traj
 
         self.waypoints = np.genfromtxt(self.waypoint_file, delimiter=',')
         self.waypoints_x = self.waypoints[:, 0]
@@ -87,8 +98,6 @@ class ShieldMPPI(Node):
         self.curr_control_sequence = initial_control_sequence
         self.stochastic_trajectories_sampler = MPPICBFStochasticTrajectoriesSampler(
             number_of_trajectories=num_traj,
-            mean=np.zeros((control_dim,)),
-            cov=np.eye(control_dim)
         )
         self.control_horizon = control_horizon
         self.control_dim = control_dim
@@ -107,8 +116,8 @@ class ShieldMPPI(Node):
             collision_checker=collision_checker,
             Q = np.diag([5.0, 5.0, 0.0, 3.0, 1.0, 0.0, 10.0]),
             QN = np.diag([100.0, 100.0, 0.0, 50.0, 100.0, 0.0, 100.0]),
-            R = np.diag([1.0, 1.0]),
-            collision_cost=10.0,
+            R = np.diag([3.0, 1.0]),
+            collision_cost=100.0,
             goal_cost=None
         )
 
@@ -130,6 +139,15 @@ class ShieldMPPI(Node):
                 '/pf/pose/odom',
                 self.pose_callback,
                 qos)
+            
+        # Subscribe to obstacles topic /perception/detection/raw_obstacles
+        self.obstacles_sub = self.create_subscription(
+            ObstacleArray,
+            '/perception/detection/raw_obstacles',
+            self.obstacles_callback,
+            qos)
+        self.obstacles = None
+        self.obstacles_radius = None
             
         # Publishers for visualization
         self.reference_pub = self.create_publisher(MarkerArray, '/reference', qos)
@@ -164,26 +182,55 @@ class ShieldMPPI(Node):
 
     def publish_sampled_trajectories(self, trajectories):
         marker_array = MarkerArray()
+        
         for i in range(trajectories.shape[0]):
+            # Create one line strip marker per trajectory
+            marker = Marker()
+            marker.header.frame_id = "map"
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = "sampled_trajectory"
+            marker.id = i
+            marker.type = Marker.LINE_STRIP
+            marker.action = Marker.ADD
+            
+            # Set proper scale for visualization (thinner lines)
+            marker.scale.x = 0.05  # Line width
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+            
+            # Set marker lifetime (optional but recommended)
+            # marker.lifetime = Duration(seconds=1).to_msg()
+            
+            # Add all points for this trajectory
             for j in range(trajectories.shape[2]):
-                marker = Marker()
-                marker.header.frame_id = "map"
-                marker.header.stamp = self.get_clock().now().to_msg()
-                marker.ns = "sampled_trajectory"
-                marker.id = i * trajectories.shape[2] + j
-                marker.type = Marker.LINE_STRIP
-                marker.action = Marker.ADD
-                marker.pose.position.x = float(trajectories[i, 0, j])
-                marker.pose.position.y = float(trajectories[i, 1, j])
-                marker.pose.position.z = 0.0
-                marker.scale.x = 0.05
-                marker.color.r = 0.0
-                marker.color.g = 1.0
-                marker.color.b = 0.0
-                marker.color.a = 1.0
-                marker_array.markers.append(marker)
+                point = Point()
+                point.x = float(trajectories[i, 0, j])
+                point.y = float(trajectories[i, 1, j])
+                point.z = 0.0
+                marker.points.append(point)
+            
+            marker_array.markers.append(marker)
+
         self.trajectory_pub.publish(marker_array)
 
+    
+    def obstacles_callback(self, msg):
+        if msg.obstacles is None or len(msg.obstacles) == 0:
+            self.obstacles = None
+            self.obstacles_radius = None
+            return
+        
+        car_width_margin = 0.25
+        obstacles_s = np.array([obstacle.s_center for obstacle in msg.obstacles])
+        obstacles_d = np.array([obstacle.d_center for obstacle in msg.obstacles])
+        self.obstacles_radius = np.array([obstacle.size + car_width_margin for obstacle in msg.obstacles])
+
+        # Convert to cartesian coordinates
+        obstacles_x, obstacles_y = self.frenet_converter.get_cartesian(obstacles_s, obstacles_d)
+        self.obstacles = np.array([obstacles_x, obstacles_y]).T
+    
 
     def pose_callback(self, msg):
         pose = msg.pose.pose
@@ -255,7 +302,7 @@ class ShieldMPPI(Node):
         ref_traj[4, 0] = cyaw[ind]
 
         # based on current velocity, distance traveled on the ref line between time steps
-        travel = abs(sp[ind]) * self.dt
+        travel = abs(max(1.0, state[3])) * self.dt
         dind = travel / self.dlk
         ind_list = int(ind) + np.insert(
             np.cumsum(np.repeat(dind, self.control_horizon-1)), 0, 0
@@ -287,20 +334,28 @@ class ShieldMPPI(Node):
         # max_controls = [1.0, 0.4]
         # control_bounds = [min_controls, max_controls]
         # control_bounds = np.asarray(control_bounds)
-        start_control = time.perf_counter()
         v = copy.deepcopy(self.curr_control_sequence)
         warm_start_itr = 1
         for _ in range(warm_start_itr):
+            noises = jax.random.multivariate_normal(
+                self.jrng.new_key(),
+                self.mean,
+                self.cov,
+                (self.control_horizon - 1) * self.num_traj
+            ).T
 
             trajectories, us, costs = self.stochastic_trajectories_sampler.sample(
                 state_cur,
                 v,
                 ref_traj,
+                self.obstacles,
+                self.obstacles_radius,
                 self.control_horizon,
                 self.control_dim,
                 self.dynamics,
                 self.cost_evaluator,
-                control_bounds=jnp.array(self.control_bounds)
+                control_bounds=jnp.array(self.control_bounds),
+                noises=noises,
             )
 
             # Publish sampled trajectories
@@ -313,7 +368,6 @@ class ShieldMPPI(Node):
                 omega.reshape((us.shape[0], 1, 1)) * us, axis=0
             )  # us shape = (number_of_trajectories, control_dim, control_horizon)
             self.curr_control_sequence = v
-        start = time.perf_counter()
         if self.repair_horizon:  # if we use CBF to carry out local repair
             v_safe = self.local_repair(v, state_cur)
         else:  # if original MPPI
@@ -346,7 +400,8 @@ class ShieldMPPI(Node):
             running_cost, state = carry
             state_next = self.dynamics.propagate(state, control.reshape(-1, 1)).reshape(-1, 1)
             running_cost += self.cost_evaluator.evaluate_cbf_cost(
-                state, dynamics=self.dynamics, state_next=state_next
+                state, dynamics=self.dynamics, state_next=state_next,
+                obstacles_list=self.obstacles, obstacles_radius=self.obstacles_radius
             )
             running_cost = jnp.sum(running_cost) # to reduce to scalar
             return (running_cost, state_next), None

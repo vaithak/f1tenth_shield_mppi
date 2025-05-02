@@ -1,5 +1,5 @@
-#include "f1tenth_icra_race/opponent_detection.h"
-#include "f1tenth_icra_race/frenet_conversion.h" // Include the FrenetConverter implementation
+#include "shield_mppi/opponent_detection_node.h"
+#include "shield_mppi/frenet_conversion.h" // Include the FrenetConverter implementation
 #include <chrono>
 #include <fstream>
 #include <sstream>
@@ -21,7 +21,7 @@ std::vector<std::vector<double>> readWaypointsFromCSV(const std::string &filenam
     std::string line;
 
     // Skip header
-    std::getline(file, line);
+    // std::getline(file, line);
 
     while (std::getline(file, line))
     {
@@ -29,7 +29,7 @@ std::vector<std::vector<double>> readWaypointsFromCSV(const std::string &filenam
         std::stringstream ss(line);
         std::string value;
 
-        while (std::getline(ss, value, ';'))
+        while (std::getline(ss, value, ','))
         {
             // Trim whitespace
             value.erase(0, value.find_first_not_of(" \t"));
@@ -56,16 +56,14 @@ std::map<std::string, int> columnNumbersForWaypoints()
     std::map<std::string, int> columns;
     columns["x_ref_m"] = 0;
     columns["y_ref_m"] = 1;
-    columns["width_right_m"] = 2;
-    columns["width_left_m"] = 3;
+    columns["width_right_m"] = 6;
+    columns["width_left_m"] = 5;
     // columns["x_normvec_m"] = 4;
     // columns["y_normvec_m"] = 5;
     // columns["alpha_m"] = 6;
-    columns["s_racetraj_m"] = 5;
-    columns["psi_racetraj_rad"] = 4;
-    columns["kappa_racetraj_radpm"] = 6;
-    columns["vx_racetraj_mps"] = 7;
-    // columns["ax_racetraj_mps2"] = 11;
+    columns["s_racetraj_m"] = 4;
+    columns["psi_racetraj_rad"] = 3;
+    columns["vx"] = 2;
     return columns;
 }
 

@@ -10,16 +10,23 @@ class MPPICBFStochasticTrajectoriesSampler():
     def __init__(
         self,
         number_of_trajectories=None,
-        mean=np.array([0.0, 0.0]),
-        cov=np.array([[1.0, 0.0], [0.0, 1.0]]),
     ):
         self.number_of_trajectories = number_of_trajectories
-        self.mean = mean
-        self.cov = cov
 
-    @partial(jax.jit, static_argnums=(0, 4, 5, 6, 7))
+    @partial(jax.jit, static_argnums=(0, 6, 7, 8, 9))
     def sample(
-        self, state_cur, v, ref_traj, control_horizon, control_dim, dynamics, cost_evaluator, control_bounds=None
+        self,
+        state_cur,
+        v,
+        ref_traj,
+        obstacles,
+        obstacles_radius,
+        control_horizon,
+        control_dim,
+        dynamics,
+        cost_evaluator,
+        control_bounds=None,
+        noises=None,
     ):
         #  state_cur is the current state, v is the nominal control sequence
         state_start = state_cur.copy()
@@ -31,14 +38,6 @@ class MPPICBFStochasticTrajectoriesSampler():
             (self.number_of_trajectories, state_cur.shape[0], control_horizon)
         )
         trajectories = trajectories.at[:, :, 0].set(jnp.swapaxes(state_cur, 0, 1))
-        # noises = self.noise_sampler.sample(
-        #     control_dim, (control_horizon - 1) * self.number_of_trajectories
-        # )
-        noises = np.random.multivariate_normal(
-            self.mean,
-            self.cov,
-            (control_horizon - 1) * self.number_of_trajectories,
-        ).T
         noises = noises.reshape(
             (control_dim, (control_horizon - 1), self.number_of_trajectories)
         )
@@ -60,10 +59,11 @@ class MPPICBFStochasticTrajectoriesSampler():
             print(f"state_cur: {state_cur.shape}, us: {us[:, j, :].shape}, state_next: {state_next.shape}")
             costs += cost_evaluator.evaluate(
                 state_cur, ref_traj[:, j], us[:, j, :], noises[:, j, :], dynamics=dynamics, state_next=state_next,
+                obstacles_list=obstacles, obstacles_radius=obstacles_radius
             )
             state_cur = state_next
             trajectories = trajectories.at[:, :, j + 1].set(jnp.swapaxes(state_cur, 0, 1))
         print(f"costs before terminal: {costs.shape}")
-        costs += cost_evaluator.evaluate_terminal_cost(state_cur, ref_traj[:, -1], dynamics=dynamics)
+        costs += cost_evaluator.evaluate_terminal_cost(state_cur, ref_traj[:, -1], dynamics=dynamics, obstacles_list=obstacles, obstacles_radius=obstacles_radius)
         us = jnp.moveaxis(us, 2, 0)
         return trajectories, us, costs

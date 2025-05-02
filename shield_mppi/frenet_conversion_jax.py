@@ -130,22 +130,21 @@ class FrenetConverter:
 
         return s, d
 
-    # def get_cartesian(self, s, d) -> jnp.array:
-    #     """
-    #     Convert Frenet coordinates (s, d) to Cartesian coordinates (x, y).
+    def get_cartesian(self, s, d) -> jnp.array:
+        """
+        Convert Frenet coordinates (s, d) to Cartesian coordinates (x, y).
         
-    #     Args:
-    #         s (float): s-coordinate
-    #         d (float): d-coordinate
+        Args:
+            s (float): s-coordinate
+            d (float): d-coordinate
             
-    #     Returns:
-    #         jnp.array: Cartesian coordinates [x, y]
-    #     """
-    #     # Compute the closest waypoint index
-    #     closest_index = self.closest_index
-    #     # Compute the angle of the closest waypoint
-    #     theta = self.waypoints_psi[closest_index]
-    #     # Compute the Cartesian coordinates
-    #     x = self.spline_x(s) + d * jnp.cos(theta)
-    #     y = self.spline_y(s) + d * jnp.sin(theta)
-    #     return jnp.array([x, y])
+        Returns:
+            jnp.array: Cartesian coordinates [x, y]
+        """
+        dx, dy = self.spline_x(s, 1), self.spline_y(s, 1)
+        theta = jnp.arctan2(dy, dx)
+        normal_theta = theta + jnp.pi / 2
+        # Compute the Cartesian coordinates
+        x = self.spline_x(s) + d * jnp.cos(normal_theta)
+        y = self.spline_y(s) + d * jnp.sin(normal_theta)
+        return jnp.array([x, y])

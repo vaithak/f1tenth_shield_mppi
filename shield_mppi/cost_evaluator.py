@@ -8,6 +8,34 @@ def boundary_barrier_function(state_cur, track_width):
     return state_cur[-1, :]**2 - track_width**2
 
 
+def obstacle_barrier_function(state_cur, obstacle_x, obstacle_y, obstacle_radius):
+    # Compute the distance from the vehicle to the obstacle
+    distance = (state_cur[0, :] - obstacle_x)**2 + (state_cur[1, :] - obstacle_y)**2
+    # Compute the negative barrier function value
+    return obstacle_radius**2 - distance
+
+
+def combined_barrier_function(state_cur, track_width, obstacles, obstacle_radius):
+    # Compute the boundary barrier function value
+    boundary_value = boundary_barrier_function(state_cur, track_width)
+    print("boundary_value shape", boundary_value.shape)
+    if obstacles is None or obstacles.shape[0] == 0:
+        return boundary_value
+    # Compute the obstacle barrier function values
+    obstacle_values = jnp.zeros((state_cur.shape[1], obstacles.shape[0]))
+    for i in range(obstacles.shape[0]):
+        obstacle_values = obstacle_values.at[:, i].set(
+            obstacle_barrier_function(state_cur, obstacles[i, 0], obstacles[i, 1], obstacle_radius[i])
+        )
+    obstacle_values_comb = jnp.max(obstacle_values, axis=1)
+    print("obstacle_values_comb shape", obstacle_values_comb.shape)
+
+    # Combine the two barrier function values
+    combined_value = jnp.maximum(boundary_value, obstacle_values_comb).reshape(-1, 1)
+    print("combined_barrier_function shape", combined_value.shape)
+    return combined_value
+
+
 class MPPICBFCostEvaluator():
     def __init__(
         self,
@@ -28,15 +56,17 @@ class MPPICBFCostEvaluator():
         self.goal_cost = goal_cost
         self.cbf_alpha = cbf_alpha
 
-    @partial(jax.jit, static_argnums=(0, 5, 6))
+
+    @partial(jax.jit, static_argnums=(0, 5))
     def evaluate(
         self,
         state_cur,
         curr_goal_state,
         actions=None,
         noises=None,
-        dyna_obstacle_list=None,
         dynamics=None,
+        obstacles_list=None,
+        obstacles_radius=None,
         state_next=None,
     ):
         print("re-tracing evaluate!")
@@ -44,13 +74,11 @@ class MPPICBFCostEvaluator():
         # except that we don't apply the collision cost
         # (we use the CBF cost instead of a collision cost, but that's applied in a
         # different function)
-        # map_state = self.global_to_local_coordinate_transform(state_cur, dynamics)
-        map_state = state_cur.copy()
         error_state_right = jnp.expand_dims(
-            (map_state - curr_goal_state.reshape((-1, 1))).T, axis=2
+            (state_cur - curr_goal_state.reshape((-1, 1))).T, axis=2
         )
         error_state_left = jnp.expand_dims(
-            (map_state - curr_goal_state.reshape((-1, 1))).T, axis=1
+            (state_cur - curr_goal_state.reshape((-1, 1))).T, axis=1
         )
         # 1/2 xQx
         cost = (
@@ -93,17 +121,12 @@ class MPPICBFCostEvaluator():
             )
 
         # Get the barrier function value at this state and the next (if provided)
-        # h_t = self.barrier_nn(map_state.T)
-        h_t = boundary_barrier_function(map_state, self.collision_checker.track_width)
-
+        h_t = combined_barrier_function(state_cur, self.collision_checker.track_width, obstacles_list, obstacles_radius)
+        print("h_t shape", h_t.shape)
         if state_next is not None:
-            # map_state_next = self.global_to_local_coordinate_transform(
-                # state_next, dynamics
-            # )
-            map_state_next = state_next.copy()
-            # h_t_plus_1 = self.barrier_nn(map_state_next.T)
-            h_t_plus_1 = boundary_barrier_function(
-                map_state_next, self.collision_checker.track_width
+            # h_t_plus_1 = self.barrier_nn(state_next.T)
+            h_t_plus_1 = combined_barrier_function(
+                state_next, self.collision_checker.track_width, obstacles_list, obstacles_radius
             )
         else:
             h_t_plus_1 = h_t
@@ -121,7 +144,7 @@ class MPPICBFCostEvaluator():
 
         # # Also consider collisions in addition to the CBF
         collisions = self.collision_checker.check(
-            map_state
+            state_cur
         )
         collisions = collisions.reshape((-1, 1, 1))
         if self.collision_cost is not None:
@@ -130,28 +153,23 @@ class MPPICBFCostEvaluator():
             cost += collisions * 1000  # default collision cost
         return cost
 
+
     @partial(jax.jit, static_argnums=(0, 2))
     def evaluate_cbf_cost(
         self,
         state_cur,
         dynamics,
         state_next,
+        obstacles_list=None,
+        obstacles_radius=None,
     ):
         print("re-tracing cbf cost...", end="")
-        # map_state = self.global_to_local_coordinate_transform(state_cur, dynamics)
-        map_state = state_cur.copy()
 
         # Get the barrier function value at this state and the next (if provided)
-        # h_t = self.barrier_nn(map_state.T)
-        h_t = boundary_barrier_function(map_state, self.collision_checker.track_width)
+        h_t = combined_barrier_function(state_cur, self.collision_checker.track_width, obstacles_list, obstacles_radius)
 
-        # map_state_next = self.global_to_local_coordinate_transform(
-        #     state_next, dynamics
-        # )
-        map_state_next = state_next.copy()
-        # h_t_plus_1 = self.barrier_nn(map_state_next.T)
-        h_t_plus_1 = boundary_barrier_function(
-            map_state_next, self.collision_checker.track_width
+        h_t_plus_1 = combined_barrier_function(
+            state_next, self.collision_checker.track_width, obstacles_list, obstacles_radius
         )
 
         # We want this to decrease along trajectories
@@ -168,9 +186,16 @@ class MPPICBFCostEvaluator():
         print("Done")
 
         return cost
-    
+
+
     def evaluate_terminal_cost(
-        self, state_cur, terminal_goal_state, actions=None, dyna_obstacle_list=None, dynamics=None
+        self,
+        state_cur,
+        terminal_goal_state,
+        actions=None,
+        obstacles_list=None,
+        obstacles_radius=None,
+        dynamics=None
     ):
         if state_cur.ndim == 1:
             state_cur = state_cur.reshape((-1, 1))
@@ -191,7 +216,9 @@ class MPPICBFCostEvaluator():
             cost += (1 / 2) * actions.T @ self.R @ actions
         
         collisions = self.collision_checker.check(
-            state_cur
+            state_cur,
+            obstacles=obstacles_list,
+            obstacles_radius=obstacles_radius,
         )
         collisions = collisions.reshape((-1, 1, 1))
         if self.collision_cost is not None:

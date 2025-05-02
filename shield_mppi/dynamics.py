@@ -7,7 +7,7 @@ params_f1tenth = {'mu': 1.0, 'C_Sf': 4.718, 'C_Sr': 5.4562, 'lf': 0.15875, 'lr':
                                'sv_max': 3.2, 'v_switch': 7.319, 'a_max': 9.51, 'v_min': -5.0, 'v_max': 20.0,
                                'width': 0.31, 'length': 0.58}  # F1/10 car
 params_f1tenth['a_max'] = 3.0
-params_f1tenth['v_min'] = -2.0
+params_f1tenth['v_min'] = 0.0
 params_f1tenth['v_max'] = 6.0
 
 def accl_constraints(vel, accl, v_switch, a_max, v_min, v_max):
