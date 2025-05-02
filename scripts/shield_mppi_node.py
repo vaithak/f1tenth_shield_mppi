@@ -369,8 +369,11 @@ class ShieldMPPI(Node):
             )  # us shape = (number_of_trajectories, control_dim, control_horizon)
             self.curr_control_sequence = v
         if self.repair_horizon:  # if we use CBF to carry out local repair
-            # v_safe = self.local_repair(v, state_cur)
-            v_safe = v
+            if self.request_repair(state_cur):
+                # Only repair if the vehicle is outside the reference trajectory
+                v_safe = self.local_repair(v, state_cur)
+            else:
+                v_safe = v
         else:  # if original MPPI
             v_safe = v
         u = v_safe[:, 0]
@@ -385,6 +388,21 @@ class ShieldMPPI(Node):
         v = np.hstack((v, v[:, -1].reshape(v.shape[0], 1)))
         self.curr_control_sequence = v
         return u
+
+
+    def request_repair(self, state_cur):
+        # If the vehicle is outside the reference trajectory, we need to repair
+        # the control sequence to ensure safety
+        if self.obstacles is None or self.obstacles.shape[0] == 0:
+            if np.abs(state_cur[-1]) > 0.3:
+                # Only repair if the vehicle is outside the reference trajectory
+                return True
+        else:
+            # TODO: check if the vehicle is near any obstacles
+            return False
+        
+        return False
+
 
     @partial(jax.jit, static_argnums=(0, 3))
     def repair_cost(self, control, state, control_shape):
