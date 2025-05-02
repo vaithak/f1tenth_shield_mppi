@@ -37,15 +37,15 @@ class ShieldMPPI(Node):
     def __init__(
         self,
         control_horizon=12,
-        num_traj=50,
+        num_traj=500,
         control_dim=2,
         inverse_temperature=1,
         initial_control_sequence=np.zeros((2, 1)),
         repair_horizon=4,
         repair_steps=4,
-        control_bounds=np.array([[-0.4, -5.0], [0.4, 5.0]]),
+        control_bounds=np.array([[-0.2, -1.0], [0.2, 3.0]]),
         mean=np.array([0.0, 0.0]),
-        cov=np.array([[0.5, 0.0], [0.0, 3.0]]),
+        cov=np.array([[0.5, 0.0], [0.0, 2.5]]),
     ):
         super().__init__('shield_mppi_node')
         print("Shield MPPI Node Initialized")
@@ -62,8 +62,8 @@ class ShieldMPPI(Node):
                 ('plot_debug', False),
                 ('print_debug', False),
                 ('dt', 0.1),
-                ('max_steering_angle', 0.5),
-                ('max_speed', 2.6),
+                ('max_steering_angle', 0.2),
+                ('max_speed', 2.5),
                 ('goal_tolerance', 0.1),
                 ('waypoint_file', f'{cwd}/src/f1tenth_shield_mppi/waypoints/fitted_2.csv'),
             ]
@@ -114,10 +114,10 @@ class ShieldMPPI(Node):
         self.cost_evaluator = MPPICBFCostEvaluator(
             cbf_alpha=0.9,
             collision_checker=collision_checker,
-            Q = np.diag([5.0, 5.0, 0.0, 3.0, 1.0, 0.0, 10.0]),
+            Q = np.diag([5.0, 5.0, 0.0, 0.0, 50.0, 0.0, 10.0]),
             QN = np.diag([100.0, 100.0, 0.0, 50.0, 100.0, 0.0, 100.0]),
-            R = np.diag([3.0, 1.0]),
-            collision_cost=100.0,
+            R = np.diag([5.0, 1.0]),
+            collision_cost=800.0,
             goal_cost=None
         )
 
@@ -260,7 +260,7 @@ class ShieldMPPI(Node):
         new_control = self.plan(curr_state_arr)
         self.control += new_control * self.dt
         self.control[0] = np.clip(self.control[0], -self.max_steering_angle, self.max_steering_angle)
-        self.control[1] = np.clip(self.control[1], 0.0, self.max_speed)
+        self.control[1] = np.clip(self.control[1], 1.0, self.max_speed)
 
         # Publish control
         self.publish_control(self.control, msg.header)
@@ -369,7 +369,8 @@ class ShieldMPPI(Node):
             )  # us shape = (number_of_trajectories, control_dim, control_horizon)
             self.curr_control_sequence = v
         if self.repair_horizon:  # if we use CBF to carry out local repair
-            v_safe = self.local_repair(v, state_cur)
+            # v_safe = self.local_repair(v, state_cur)
+            v_safe = v
         else:  # if original MPPI
             v_safe = v
         u = v_safe[:, 0]

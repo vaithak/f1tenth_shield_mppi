@@ -47,7 +47,6 @@ class MPPICBFCostEvaluator():
         collision_cost=None,
         goal_cost=None,
     ):
-        self.cbf_alpha = cbf_alpha
         self.collision_checker = collision_checker
         self.Q = Q
         self.QN = QN

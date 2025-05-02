@@ -58,7 +58,7 @@ class MPPICBFStochasticTrajectoriesSampler():
             propagation_time += time.perf_counter() - start
             print(f"state_cur: {state_cur.shape}, us: {us[:, j, :].shape}, state_next: {state_next.shape}")
             costs += cost_evaluator.evaluate(
-                state_cur, ref_traj[:, j], us[:, j, :], noises[:, j, :], dynamics=dynamics, state_next=state_next,
+                state_cur, ref_traj[:, -1], us[:, j, :], noises[:, j, :], dynamics=dynamics, state_next=state_next,
                 obstacles_list=obstacles, obstacles_radius=obstacles_radius
             )
             state_cur = state_next
