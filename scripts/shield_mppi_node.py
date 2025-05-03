@@ -63,7 +63,7 @@ class ShieldMPPI(Node):
                 ('print_debug', False),
                 ('dt', 0.1),
                 ('max_steering_angle', 0.2),
-                ('max_speed', 2.5),
+                ('max_speed', 1.5),
                 ('goal_tolerance', 0.1),
                 ('waypoint_file', f'{cwd}/src/f1tenth_shield_mppi/waypoints/fitted_2.csv'),
             ]
@@ -78,7 +78,7 @@ class ShieldMPPI(Node):
         self.max_speed = self.get_parameter('max_speed').get_parameter_value().double_value
         self.goal_tolerance = self.get_parameter('goal_tolerance').get_parameter_value().double_value
         self.waypoint_file = self.get_parameter('waypoint_file').get_parameter_value().string_value
-        self.dlk = 0.27 # dist step [m] kinematic
+        self.dlk = 0.17 # dist step [m] kinematic
         self.mean = mean
         self.cov = cov
         self.num_traj = num_traj
@@ -222,7 +222,7 @@ class ShieldMPPI(Node):
             self.obstacles_radius = None
             return
         
-        car_width_margin = 0.25
+        car_width_margin = 0.10
         obstacles_s = np.array([obstacle.s_center for obstacle in msg.obstacles])
         obstacles_d = np.array([obstacle.d_center for obstacle in msg.obstacles])
         self.obstacles_radius = np.array([obstacle.size + car_width_margin for obstacle in msg.obstacles])
