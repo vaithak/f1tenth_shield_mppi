@@ -70,6 +70,9 @@ ament_python_install_package(${PROJECT_NAME})
 # Install Python executables
 install(PROGRAMS
   scripts/shield_mppi_node.py
+  scripts/opponent_tracking.py
+  scripts/spliner.py
+  scripts/state_machine.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
