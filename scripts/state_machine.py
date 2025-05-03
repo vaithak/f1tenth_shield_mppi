@@ -25,7 +25,7 @@ def normalize_s(s, track_length):
 def time_to_float(time_instant: Time):
     return time_instant.sec + time_instant.nanosec * 1e-9
 
-def create_wpnts_from_np_array(wpnts_x, wpnts_y, wpnts_v, wpnts_s, wpnts_d):
+def create_wpnts_from_np_array(wpnts_x, wpnts_y, wpnts_v, wpnts_s, wpnts_d, wpnts_psi):
     wpnts = []
     n = len(wpnts_x)
     for i in range(n):
@@ -36,6 +36,7 @@ def create_wpnts_from_np_array(wpnts_x, wpnts_y, wpnts_v, wpnts_s, wpnts_d):
         wpnt.vx_mps = float(wpnts_v[i])
         wpnt.s_m = float(wpnts_s[i])
         wpnt.d_m = float(wpnts_d[i])
+        wpnt.psi_rad = float(wpnts_psi[i])
         wpnts.append(wpnt)
     return wpnts
 
@@ -68,7 +69,7 @@ class StateMachine(Node):
         self.track_length = self.waypoints[-1, waypoint_cols['s_racetraj_m']]
         self.glb_wpnts = create_wpnts_from_np_array(
             self.waypoints_x, self.waypoints_y, self.waypoints_v,
-            self.wpnts_s_array, self.wpnts_d_right_array
+            self.wpnts_s_array, self.wpnts_d_right_array, waypoints_psi
         )
         self.num_glb_wpnts = len(self.glb_wpnts)
 
@@ -301,6 +302,16 @@ class StateMachine(Node):
         else:
             self.get_logger().warn(f"No valid avoidance waypoints, passing global waypoints")
             pass
+
+        # Compute the yaw of the waypoints
+        for i in range(len(spline_glob)):
+            if i == len(spline_glob) - 1:
+                spline_glob[i].psi_rad = spline_glob[i - 1].psi_rad
+            else:
+                spline_glob[i].psi_rad = np.arctan2(
+                    spline_glob[i + 1].y_m - spline_glob[i - 1].y_m,
+                    spline_glob[i + 1].x_m - spline_glob[i - 1].x_m,
+                )
 
         return spline_glob
 

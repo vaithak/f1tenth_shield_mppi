@@ -22,7 +22,8 @@ from shield_mppi.frenet_conversion_jax import FrenetConverter
 from shield_mppi.utils import nearest_point
 from shield_mppi.cost_evaluator import MPPICBFCostEvaluator
 from shield_mppi.collision_checker import CollisionChecker
-from f1tenth_icra_race_msgs.msg import ObstacleArray
+from f1tenth_icra_race_msgs.msg import ObstacleArray, WpntArray
+from std_msgs.msg import String
 
 
 class oneLineJaxRNG:
@@ -78,16 +79,16 @@ class ShieldMPPI(Node):
         self.max_speed = self.get_parameter('max_speed').get_parameter_value().double_value
         self.goal_tolerance = self.get_parameter('goal_tolerance').get_parameter_value().double_value
         self.waypoint_file = self.get_parameter('waypoint_file').get_parameter_value().string_value
-        self.dlk = 0.17 # dist step [m] kinematic
+        self.dlk = 0.15 # dist step [m] kinematic
         self.mean = mean
         self.cov = cov
         self.num_traj = num_traj
 
-        self.waypoints = np.genfromtxt(self.waypoint_file, delimiter=',')
-        self.waypoints_x = self.waypoints[:, 0]
-        self.waypoints_y = self.waypoints[:, 1]
-        self.waypoints_psi = self.waypoints[:, 3]
-        self.waypoints_speed = self.waypoints[:, 2]
+        waypoints = np.genfromtxt(self.waypoint_file, delimiter=',')
+        self.waypoints_x = waypoints[:, 0]
+        self.waypoints_y = waypoints[:, 1]
+        self.waypoints_psi = waypoints[:, 3]
+        self.waypoints_speed = waypoints[:, 2]
         self.frenet_converter = FrenetConverter(
             waypoints_x=self.waypoints_x,
             waypoints_y=self.waypoints_y,
@@ -114,7 +115,7 @@ class ShieldMPPI(Node):
         self.cost_evaluator = MPPICBFCostEvaluator(
             cbf_alpha=0.9,
             collision_checker=collision_checker,
-            Q = np.diag([5.0, 5.0, 0.0, 0.0, 50.0, 0.0, 10.0]),
+            Q = np.diag([5.0, 5.0, 0.0, 5.0, 10.0, 0.0, 10.0]),
             QN = np.diag([100.0, 100.0, 0.0, 50.0, 100.0, 0.0, 100.0]),
             R = np.diag([5.0, 1.0]),
             collision_cost=800.0,
@@ -139,6 +140,8 @@ class ShieldMPPI(Node):
                 '/pf/pose/odom',
                 self.pose_callback,
                 qos)
+        self.create_subscription(WpntArray, '/state_machine/local_waypoints', self.wpnts_callback, qos)
+        
             
         # Subscribe to obstacles topic /perception/detection/raw_obstacles
         self.obstacles_sub = self.create_subscription(
@@ -148,6 +151,7 @@ class ShieldMPPI(Node):
             qos)
         self.obstacles = None
         self.obstacles_radius = None
+        
             
         # Publishers for visualization
         self.reference_pub = self.create_publisher(MarkerArray, '/reference', qos)
@@ -157,6 +161,20 @@ class ShieldMPPI(Node):
         # Publisher
         self.drive_pub = self.create_publisher(AckermannDriveStamped, '/drive', qos)
 
+    def wpnts_callback(self, msg: WpntArray):
+        local_waypoints = []
+        for waypoint in msg.wpnts:
+            local_waypoints.append([
+                waypoint.x_m,
+                waypoint.y_m,
+                waypoint.vx_mps,
+                waypoint.s_m, waypoint.psi_rad, waypoint.ax_mps2])
+        local_waypoints = np.array(local_waypoints)
+        self.waypoints_x = local_waypoints[:, 0]
+        self.waypoints_y = local_waypoints[:, 1]
+        self.waypoints_psi = local_waypoints[:, 4] #+ np.pi / 2.0
+        self.waypoints_speed = local_waypoints[:, 2]
+
     def publish_reference(self, ref_traj):
         marker_array = MarkerArray()
         for i in range(ref_traj.shape[1]):
@@ -165,11 +183,15 @@ class ShieldMPPI(Node):
             marker.header.stamp = self.get_clock().now().to_msg()
             marker.ns = "reference"
             marker.id = i
-            marker.type = Marker.SPHERE
+            marker.type = Marker.ARROW
             marker.action = Marker.ADD
             marker.pose.position.x = ref_traj[0, i]
             marker.pose.position.y = ref_traj[1, i]
             marker.pose.position.z = 0.0
+            marker.pose.orientation.x = 0.0
+            marker.pose.orientation.y = 0.0
+            marker.pose.orientation.z = np.sin(ref_traj[4, i] / 2.0)
+            marker.pose.orientation.w = np.cos(ref_traj[4, i] / 2.0)
             marker.scale.x = 0.1
             marker.scale.y = 0.1
             marker.scale.z = 0.1
@@ -256,6 +278,9 @@ class ShieldMPPI(Node):
             d[0]
         ])
 
+        if self.waypoints_x is None or self.waypoints_y is None:
+            return
+
         # Plan control
         new_control = self.plan(curr_state_arr)
         self.control += new_control * self.dt
@@ -293,7 +318,10 @@ class ShieldMPPI(Node):
         ncourse = len(cx)
 
         # Find nearest index/setpoint from where the trajectories are calculated
-        _, _, _, ind = nearest_point(np.array([state[0], state[1]]), np.array([cx, cy]).T)
+        # _, _, _, ind = nearest_point(np.array([state[0], state[1]]), np.array([cx, cy]).T)
+        ind = 0   
+        # print("cx shape", cx.shape)
+        # print("cy shape", cy.shape)
 
         # Load the initial parameters from the setpoint into the trajectory
         ref_traj[0, 0] = cx[ind]
@@ -379,11 +407,6 @@ class ShieldMPPI(Node):
         u = v_safe[:, 0]
         # Control Bounds
         u = np.clip(u, self.min_controls, self.max_controls)
-
-        # if self.renderer is not None:
-            # optimal_trajectory = self.rollout_out(state_cur, v)
-            # self.renderer.render_trajectories(trajectories, **{"color": "b"})
-            # self.renderer.render_trajectories([optimal_trajectory], **{"color": "r"})
         v = np.delete(v, 0, 1)
         v = np.hstack((v, v[:, -1].reshape(v.shape[0], 1)))
         self.curr_control_sequence = v
@@ -399,7 +422,7 @@ class ShieldMPPI(Node):
                 return True
         else:
             # TODO: check if the vehicle is near any obstacles
-            return False
+            return True
         
         return False
 
