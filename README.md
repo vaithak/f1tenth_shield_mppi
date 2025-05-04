@@ -22,7 +22,20 @@
   `ros2 launch f1tenth_icra_race r3.c.launch.py`
 
 ### Subsystems and workings
-
+- **Opponent Detection and tracking:**
+    - It uses a clustering method with an adaptive breakpoint algorithm to create bounding box rectangles for obstacles.
+    - Uses a simplified Extended Kalman Filter for Velocity tracking (assumes a single obstacle).
+    - Implemented in C++ for realtime performance of 50Hz.
+    - Reference: https://github.com/kostaskonkk/datmo
+- **Spline-based real-time planner and state machine:**
+    - Real-time updating of local waypoints if an obstacle is detected in front of the car.
+    - Decides which side to overtake from and fits a cubic spline to update the waypoints.
+    - State machine to decide when to trail vs when to overtake
+    - Reference from ForzaETH: https://arxiv.org/abs/2403.11784
+- **Shield MPPI-based controller:**
+    - MPPI with control barrier functions for following the raceline and avoiding obstacles.
+    - Local repair minimization step using CBFs is only done when the trajectory follows undesired behavior.
+    - Reference of Shield MPPI: https://arxiv.org/abs/2302.11719
 
 ### Working demo on sim
 [shield mppi](https://github.com/user-attachments/assets/b5d3f740-e091-4092-b12f-3779751e319c)
