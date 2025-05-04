@@ -18,7 +18,7 @@
   `ros2 launch f1tenth_icra_race r3.oo.launch.py`
 - Launch the spliner and state machine
   `ros2 launch f1tenth_icra_race r3.ss.launch.py`
-- Launch the controller
+- Launch the shield mppi controller
   `ros2 launch f1tenth_icra_race r3.c.launch.py`
 
 ### Subsystems and workings
