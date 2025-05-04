@@ -23,16 +23,20 @@
 
 ### Subsystems and workings
 - **Opponent Detection and tracking:**
-    - It uses a clustering method with an adaptive breakpoint algorithm to create bounding box rectangles for obstacles.
+    <img align="right" width="65" src="images/detect-and-track.png" />
+    - It uses a clustering method with an adaptive breakpoint algorithm to create bounding box  
+      rectangles for obstacles.
     - Uses a simplified Extended Kalman Filter for Velocity tracking (assumes a single obstacle).
     - Implemented in C++ for realtime performance of 50Hz.
     - Reference: https://github.com/kostaskonkk/datmo
 - **Spline-based real-time planner and state machine:**
+    <img align="right" width="65" src="images/spliner.png" />
     - Real-time updating of local waypoints if an obstacle is detected in front of the car.
     - Decides which side to overtake from and fits a cubic spline to update the waypoints.
     - State machine to decide when to trail vs when to overtake
     - Reference from ForzaETH: https://arxiv.org/abs/2403.11784
 - **Shield MPPI-based controller:**
+    <img align="right" width="65" src="images/mppi.png" />
     - MPPI with control barrier functions for following the raceline and avoiding obstacles.
     - Local repair minimization step using CBFs is only done when the trajectory follows undesired behavior.
     - Reference of Shield MPPI: https://arxiv.org/abs/2302.11719
