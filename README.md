@@ -27,3 +27,6 @@
 ### Working demo on sim
 [shield mppi](https://github.com/user-attachments/assets/b5d3f740-e091-4092-b12f-3779751e319c)
 
+### Working version on a real car
+[![real-car-demo](https://img.youtube.com/vi/V5UYKdPNC0Q/0.jpg)](https://www.youtube.com/watch?v=V5UYKdPNC0Q)  
+
