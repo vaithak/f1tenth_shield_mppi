@@ -116,7 +116,7 @@ class ShieldMPPI(Node):
             cbf_alpha=0.9,
             collision_checker=collision_checker,
             Q = np.diag([5.0, 5.0, 0.0, 5.0, 10.0, 0.0, 10.0]),
-            QN = np.diag([100.0, 100.0, 0.0, 50.0, 100.0, 0.0, 100.0]),
+            QN = np.diag([5.0, 5.0, 0.0, 5.0, 10.0, 0.0, 10.0]),
             R = np.diag([5.0, 1.0]),
             collision_cost=800.0,
             goal_cost=None

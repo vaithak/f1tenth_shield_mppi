@@ -76,6 +76,17 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# launch files directory
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# config files directory
+install(DIRECTORY
+  config
+  DESTINATION share/${PROJECT_NAME}/
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

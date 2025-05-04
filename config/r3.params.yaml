@@ -1,0 +1,46 @@
+shield_mppi_node:
+  ros__parameters:
+    waypoint_file: "/home/vaithak/Downloads/UPenn/F1Tenth/sim_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    # waypoint_file: "/home/nvidia/f1tenth_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    is_sim: True
+    # is_sim: False
+    plot_debug: True
+
+opponent_detection:
+  ros__parameters:
+    waypoint_file: "/home/vaithak/Downloads/UPenn/F1Tenth/sim_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    # waypoint_file: "/home/nvidia/f1tenth_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    is_sim: True
+    # is_sim: False
+    plot_debug: True
+
+opponent_tracking:
+  ros__parameters:
+    waypoint_file: "/home/vaithak/Downloads/UPenn/F1Tenth/sim_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    # waypoint_file: "/home/nvidia/f1tenth_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    is_sim: True
+    # is_sim: False
+    plot_debug: True
+
+spline_node:
+  ros__parameters:
+    waypoint_file: "/home/vaithak/Downloads/UPenn/F1Tenth/sim_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    # waypoint_file: "/home/nvidia/f1tenth_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    is_sim: True
+    # is_sim: False
+    plot_debug: True
+
+state_machine:
+  ros__parameters:
+    waypoint_file: "/home/vaithak/Downloads/UPenn/F1Tenth/sim_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    # waypoint_file: "/home/nvidia/f1tenth_ws/src/shield_mppi/waypoints/fitted_2.csv"
+    is_sim: True
+    # is_sim: False
+    plot_debug: True
+
+# ros2 run shield_mppi controller.py --ros-args -p is_sim:=True -p waypoint_file:=/home/navjot/Desktop/work/sim_ws/src/r3/f1tenth-icra-race/waypoints/fitted_2.csv
+# ros2 run shield_mppi opponent_detection_node_cpp --ros-args -p is_sim:=True -p waypoint_file:=/home/navjot/Desktop/work/sim_ws/src/r3/f1tenth-icra-race/waypoints/fitted_2.csv
+# ros2 run shield_mppi opponent_tracking.py --ros-args -p is_sim:=True -p waypoint_file:=/home/navjot/Desktop/work/sim_ws/src/r3/f1tenth-icra-race/waypoints/fitted_2.csv
+# ros2 run shield_mppi spliner.py --ros-args -p is_sim:=True -p waypoint_file:=/home/navjot/Desktop/work/sim_ws/src/r3/f1tenth-icra-race/waypoints/fitted_2.csv
+# ros2 run shield_mppi state_machine.py --ros-args -p is_sim:=True -p waypoint_file:=/home/navjot/Desktop/work/sim_ws/src/r3/f1tenth-icra-race/waypoints/fitted_2.csv
+    
